@@ -7,6 +7,9 @@ const redis = new Redis({
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'cx-admin-2026';
 
+// 默认卡密额度
+const DEFAULT_BALANCE = 5000;
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -28,7 +31,7 @@ export default async function handler(req, res) {
   try {
     // Generate tokens
     if (action === 'generate' || (req.method === 'POST' && req.body?.count)) {
-      const count = req.body?.count || 100;
+      const count = req.body?.count || DEFAULT_BALANCE;  // 默认 5000 题
       const quantity = req.body?.quantity || 1;
       const tokens = [];
 
@@ -41,6 +44,11 @@ export default async function handler(req, res) {
           created: Date.now(),
           lastUsed: null,
           note: req.body?.note || '',
+          boundIPs: [],       // IP 绑定列表
+          firstIP: null,
+          firstIPTime: null,
+          lastIP: null,
+          source: req.body?.source || 'manual',  // manual / dujiao / webhook
         });
         await redis.sadd('cx:all_tokens', token);
         tokens.push({ token, balance: count });
@@ -57,7 +65,12 @@ export default async function handler(req, res) {
       for (const t of tokenIds) {
         const data = await redis.get(`cx:token:${t}`);
         if (data) {
-          result.push({ token: t, ...data });
+          result.push({
+            token: t,
+            ...data,
+            boundIPs: data.boundIPs || [],
+            ipCount: (data.boundIPs || []).length,
+          });
         }
       }
 
@@ -72,6 +85,43 @@ export default async function handler(req, res) {
         await redis.srem('cx:all_tokens', token);
         return res.json({ success: true, message: '已删除' });
       }
+    }
+
+    // Unbind IP — 解除卡密绑定的所有 IP
+    if (action === 'unbind_ip') {
+      const token = req.body?.token || req.query.token;
+      if (token) {
+        const data = await redis.get(`cx:token:${token}`);
+        if (!data) {
+          return res.status(404).json({ error: '卡密不存在' });
+        }
+        await redis.set(`cx:token:${token}`, {
+          ...data,
+          boundIPs: [],
+          firstIP: null,
+          firstIPTime: null,
+        });
+        return res.json({ success: true, message: 'IP 已解绑，用户可重新绑定' });
+      }
+    }
+
+    // Batch unbind IP
+    if (action === 'unbind_ip_all') {
+      const tokenIds = await redis.smembers('cx:all_tokens');
+      let count = 0;
+      for (const t of tokenIds) {
+        const data = await redis.get(`cx:token:${t}`);
+        if (data && (data.boundIPs || []).length > 0) {
+          await redis.set(`cx:token:${t}`, {
+            ...data,
+            boundIPs: [],
+            firstIP: null,
+            firstIPTime: null,
+          });
+          count++;
+        }
+      }
+      return res.json({ success: true, message: `已解绑 ${count} 张卡密的 IP` });
     }
 
     // Get usage logs
@@ -89,6 +139,7 @@ export default async function handler(req, res) {
       let totalBalance = 0;
       let totalUsed = 0;
       let activeTokens = 0;
+      let lockedTokens = 0;  // IP 达上限的卡密数
 
       for (const t of tokenIds) {
         const data = await redis.get(`cx:token:${t}`);
@@ -96,6 +147,7 @@ export default async function handler(req, res) {
           totalBalance += data.balance || 0;
           totalUsed += data.used || 0;
           if (data.balance > 0) activeTokens++;
+          if ((data.boundIPs || []).length >= 3) lockedTokens++;
         }
       }
 
@@ -104,7 +156,23 @@ export default async function handler(req, res) {
         activeTokens,
         totalBalance,
         totalUsed,
+        lockedTokens,
       });
+    }
+
+    // Export tokens as CSV (for importing into 发卡平台)
+    if (action === 'export') {
+      const tokenIds = await redis.smembers('cx:all_tokens');
+      const lines = ['token,balance,used,created,note,source'];
+      for (const t of tokenIds) {
+        const data = await redis.get(`cx:token:${t}`);
+        if (data) {
+          lines.push(`${t},${data.balance || 0},${data.used || 0},${data.created || ''},${data.note || ''},${data.source || ''}`);
+        }
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="tokens.csv"');
+      return res.status(200).send(lines.join('\n'));
     }
 
     return res.status(400).json({ error: '未知操作' });

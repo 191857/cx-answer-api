@@ -10,7 +10,7 @@
       font-family: -apple-system, "Microsoft YaHei", sans-serif;
       background: #0f0f1a; color: #e0e0f0; min-height: 100vh;
     }
-    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 
     /* 登录 */
     .login-wrap {
@@ -48,7 +48,7 @@
 
     /* 统计卡片 */
     .stats-grid {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px;
     }
     .stat-card {
       background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px;
@@ -59,6 +59,7 @@
     .stat-card.green .stat-value { color: #a6e3a1; }
     .stat-card.yellow .stat-value { color: #f9e2af; }
     .stat-card.red .stat-value { color: #f38ba8; }
+    .stat-card.orange .stat-value { color: #fab387; }
 
     /* 面板 */
     .panel {
@@ -88,6 +89,10 @@
       border-radius: 8px; cursor: pointer; background: #89b4fa; color: #11111b; transition: 0.2s;
     }
     .gen-form button:hover { background: #74c7ec; }
+    .gen-form button.secondary {
+      background: transparent; border: 1px solid #313244; color: #cdd6f4;
+    }
+    .gen-form button.secondary:hover { background: #313244; }
 
     /* 表格 */
     .table-wrap { overflow-x: auto; }
@@ -105,6 +110,7 @@
     }
     .badge.active { background: rgba(166,227,161,0.15); color: #a6e3a1; }
     .badge.exhausted { background: rgba(243,139,168,0.15); color: #f38ba8; }
+    .badge.locked { background: rgba(250,179,135,0.15); color: #fab387; }
     .btn-small {
       padding: 4px 12px; font-size: 12px; border: 1px solid #313244; border-radius: 6px;
       background: transparent; color: #cdd6f4; cursor: pointer; transition: 0.15s;
@@ -112,6 +118,8 @@
     .btn-small:hover { background: #313244; }
     .btn-small.danger { border-color: #f38ba8; color: #f38ba8; }
     .btn-small.danger:hover { background: #f38ba8; color: #11111b; }
+    .btn-small.warn { border-color: #fab387; color: #fab387; }
+    .btn-small.warn:hover { background: #fab387; color: #11111b; }
 
     /* Toast */
     .toast {
@@ -146,6 +154,7 @@
     .log-item .log-q { color: #a6adc8; }
     .log-item .log-a { color: #a6e3a1; margin-top: 2px; }
     .log-item .log-t { color: #6c7086; font-size: 11px; margin-top: 2px; }
+    .log-item .log-ip { color: #fab387; font-size: 11px; margin-top: 2px; }
 
     .empty { text-align: center; padding: 40px; color: #6c7086; font-size: 14px; }
     .api-url-box {
@@ -153,6 +162,24 @@
       padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: #a6adc8;
     }
     .api-url-box code { color: #89b4fa; font-family: monospace; }
+
+    /* 发卡平台面板 */
+    .faka-info {
+      background: #11111b; border: 1px solid #313244; border-radius: 8px;
+      padding: 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.8;
+    }
+    .faka-info code { color: #89b4fa; background: #1a1a2e; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .faka-info .step { color: #fab387; font-weight: 600; }
+    .faka-tabs {
+      display: flex; gap: 4px; margin-bottom: 16px;
+    }
+    .faka-tab {
+      padding: 6px 16px; border: 1px solid #313244; border-radius: 8px 8px 0 0;
+      background: transparent; color: #6c7086; cursor: pointer; font-size: 13px;
+    }
+    .faka-tab.active { background: #1a1a2e; color: #89b4fa; border-bottom-color: #1a1a2e; }
+    .faka-content { display: none; }
+    .faka-content.active { display: block; }
   </style>
 </head>
 <body>
@@ -177,7 +204,7 @@
   <!-- API 地址提示 -->
   <div class="api-url-box" id="apiUrlBox">
     API 地址: <code id="apiUrlText">加载中...</code>
-    <span style="margin-left:12px">管理 API: <code id="adminApiUrl">加载中...</code></span>
+    <span style="margin-left:12px">Webhook: <code id="webhookUrl">加载中...</code></span>
   </div>
 
   <!-- 统计 -->
@@ -186,25 +213,91 @@
     <div class="stat-card green"><div class="stat-value" id="stat-active">-</div><div class="stat-label">活跃卡密</div></div>
     <div class="stat-card yellow"><div class="stat-value" id="stat-used">-</div><div class="stat-label">已使用次数</div></div>
     <div class="stat-card red"><div class="stat-value" id="stat-balance">-</div><div class="stat-label">剩余总额度</div></div>
+    <div class="stat-card orange"><div class="stat-value" id="stat-locked">-</div><div class="stat-label">IP锁定数</div></div>
+  </div>
+
+  <!-- 发卡平台对接 -->
+  <div class="panel">
+    <div class="panel-title">🛒 发卡平台对接</div>
+    <div class="faka-tabs">
+      <button class="faka-tab active" onclick="switchTab('dujiao')">独角数卡</button>
+      <button class="faka-tab" onclick="switchTab('batch')">批量生成导入</button>
+      <button class="faka-tab" onclick="switchTab('webhook')">Webhook自动发卡</button>
+    </div>
+
+    <!-- 独角数卡 -->
+    <div class="faka-content active" id="tab-dujiao">
+      <div class="faka-info">
+        <span class="step">方式一：自动发卡（推荐）</span><br>
+        1. 部署 <a href="https://github.com/assimon/dujiao" target="_blank" style="color:#89b4fa">独角数卡</a> 发卡系统<br>
+        2. 在独角数卡后台 → 商品管理 → 新建商品 → 商品类型选「自动发卡」<br>
+        3. 在下方"生成卡密"批量生成卡密，然后点击"导出CSV"<br>
+        4. 将导出的卡密列表粘贴到独角数卡商品的库存中<br>
+        5. 配置微信/支付宝支付参数，上架商品即可<br>
+        6. 用户支付后独角数卡自动从库存取一张卡密发给买家
+      </div>
+    </div>
+
+    <!-- 批量生成 -->
+    <div class="faka-content" id="tab-batch">
+      <div class="faka-info">
+        <span class="step">批量生成 + 导出</span><br>
+        1. 在下方"生成卡密"区域设置额度和数量<br>
+        2. 点击"生成"按钮<br>
+        3. 点击"导出CSV"下载所有卡密<br>
+        4. 将CSV导入到任何发卡平台的库存中
+      </div>
+    </div>
+
+    <!-- Webhook -->
+    <div class="faka-content" id="tab-webhook">
+      <div class="faka-info">
+        <span class="step">Webhook 自动生成卡密</span><br>
+        当用户在发卡平台支付成功后，发卡平台调用你的 Webhook 接口自动生成卡密。<br><br>
+        <strong>Webhook URL:</strong> <code id="webhookUrlFull">加载中...</code><br>
+        <strong>请求方式:</strong> POST<br>
+        <strong>请求头:</strong> <code>X-Webhook-Secret: 你的密钥</code><br>
+        <strong>请求体:</strong><br>
+        <code style="display:block;white-space:pre-wrap;padding:8px;margin-top:4px">{
+  "orderNo": "订单号",
+  "quantity": 1,
+  "amount": 9.9,
+  "email": "买家邮箱"
+}</code>
+        <strong>响应:</strong><br>
+        <code style="display:block;white-space:pre-wrap;padding:8px;margin-top:4px">{
+  "success": true,
+  "tokens": ["CX-XXXX-XXXX-XXXX"],
+  "count": 1,
+  "balance": 5000
+}</code>
+        <br>
+        <strong style="color:#fab387">⚠️ 需在 Vercel 环境变量中设置:</strong><br>
+        <code>WEBHOOK_SECRET</code> = 你的webhook密钥<br>
+        <code>CARD_BALANCE</code> = 5000（每张卡密题数）
+      </div>
+    </div>
   </div>
 
   <!-- 生成卡密 -->
   <div class="panel">
-    <div class="panel-title">🎫 生成卡密</div>
+    <div class="panel-title">🎫 生成卡密（默认5000题/张）</div>
     <div class="gen-form">
       <div class="field">
         <label>每张额度（题数）</label>
-        <input type="number" id="genCount" value="100" min="1" max="10000">
+        <input type="number" id="genCount" value="5000" min="1" max="50000">
       </div>
       <div class="field">
         <label>生成数量</label>
-        <input type="number" id="genQuantity" value="1" min="1" max="100">
+        <input type="number" id="genQuantity" value="1" min="1" max="500">
       </div>
       <div class="field">
         <label>备注（可选）</label>
         <input type="text" id="genNote" placeholder="如：淘宝订单123" style="width:200px">
       </div>
       <button onclick="generateTokens()">生成</button>
+      <button class="secondary" onclick="exportCSV()">导出CSV</button>
+      <button class="secondary" onclick="unbindAllIP()">批量解绑IP</button>
     </div>
     <div id="genResult" style="margin-top:12px;display:none">
       <div style="font-size:12px;color:#a6adc8;margin-bottom:6px">新卡密（点击复制）：</div>
@@ -223,15 +316,16 @@
             <th>额度</th>
             <th>已用</th>
             <th>剩余</th>
+            <th>IP绑定</th>
+            <th>来源</th>
             <th>备注</th>
             <th>创建时间</th>
-            <th>最后使用</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="tokenTableBody">
-          <tr><td colspan="9" class="empty">加载中...</td></tr>
+          <tr><td colspan="10" class="empty">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -258,7 +352,15 @@ var ADMIN_TOKEN = sessionStorage.getItem('cx_admin_token') || '';
 
 // 自动填充 API 地址
 document.getElementById('apiUrlText').textContent = API_BASE + '/api/answer';
-document.getElementById('adminApiUrl').textContent = API_BASE + '/api/admin';
+document.getElementById('webhookUrl').textContent = API_BASE + '/api/webhook';
+document.getElementById('webhookUrlFull').textContent = API_BASE + '/api/webhook';
+
+function switchTab(tab) {
+  document.querySelectorAll('.faka-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.faka-content').forEach(function(c) { c.classList.remove('active'); });
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
 
 function showToast(msg, type) {
   var t = document.getElementById('toast');
@@ -284,7 +386,6 @@ function doLogin() {
   if (!pwd) { showToast('请输入密码', 'error'); return; }
   ADMIN_TOKEN = pwd;
   sessionStorage.setItem('cx_admin_token', pwd);
-  // 测试登录
   apiCall('stats', 'GET').then(function(data) {
     if (data.error) {
       showToast('密码错误', 'error');
@@ -319,6 +420,7 @@ function loadStats() {
     document.getElementById('stat-active').textContent = data.activeTokens || 0;
     document.getElementById('stat-used').textContent = data.totalUsed || 0;
     document.getElementById('stat-balance').textContent = data.totalBalance || 0;
+    document.getElementById('stat-locked').textContent = data.lockedTokens || 0;
   });
 }
 
@@ -327,25 +429,41 @@ function loadTokens() {
     if (data.error) { showToast(data.error, 'error'); return; }
     var tbody = document.getElementById('tokenTableBody');
     if (!data.tokens || data.tokens.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无卡密，点击上方"生成"创建</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">暂无卡密，点击上方"生成"创建</td></tr>';
       return;
     }
     var html = '';
     data.tokens.forEach(function(t) {
       var isActive = t.balance > 0;
+      var isLocked = (t.ipCount || 0) >= 3;
       var created = t.created ? new Date(t.created).toLocaleString('zh-CN') : '-';
-      var lastUsed = t.lastUsed ? new Date(t.lastUsed).toLocaleString('zh-CN') : '未使用';
+      var ipBadge = (t.ipCount || 0) > 0
+        ? '<span class="badge ' + (isLocked ? 'locked' : 'active') + '">' + (t.ipCount || 0) + '/3</span>'
+        : '<span style="color:#6c7086">未绑定</span>';
+      var sourceBadge = t.source === 'dujiao'
+        ? '<span style="color:#fab387">发卡</span>'
+        : t.source === 'webhook'
+        ? '<span style="color:#f9e2af">webhook</span>'
+        : '<span style="color:#6c7086">手动</span>';
+      var statusBadge = !isActive
+        ? '<span class="badge exhausted">已用完</span>'
+        : isLocked
+        ? '<span class="badge locked">IP锁定</span>'
+        : '<span class="badge active">可用</span>';
+
       html += '<tr>' +
         '<td class="token-cell" onclick="copyText(\'' + t.token + '\')">' + t.token + '</td>' +
         '<td>' + (t.total || 0) + '</td>' +
         '<td>' + (t.used || 0) + '</td>' +
         '<td style="font-weight:600;color:' + (isActive ? '#a6e3a1' : '#f38ba8') + '">' + (t.balance || 0) + '</td>' +
-        '<td>' + (t.note || '-') + '</td>' +
-        '<td>' + created + '</td>' +
-        '<td>' + lastUsed + '</td>' +
-        '<td><span class="badge ' + (isActive ? 'active' : 'exhausted') + '">' + (isActive ? '可用' : '已用完') + '</span></td>' +
-        '<td>' +
+        '<td>' + ipBadge + '</td>' +
+        '<td>' + sourceBadge + '</td>' +
+        '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (t.note || '') + '">' + (t.note || '-') + '</td>' +
+        '<td style="white-space:nowrap">' + created + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td style="white-space:nowrap">' +
           '<button class="btn-small" onclick="showLogs(\'' + t.token + '\')">日志</button> ' +
+          (isLocked ? '<button class="btn-small warn" onclick="unbindIP(\'' + t.token + '\')">解绑</button> ' : '') +
           '<button class="btn-small danger" onclick="revokeToken(\'' + t.token + '\')">删除</button>' +
         '</td>' +
         '</tr>';
@@ -366,7 +484,6 @@ function generateTokens() {
     if (data.error) { showToast(data.error, 'error'); return; }
     showToast('成功生成 ' + data.tokens.length + ' 张卡密', 'success');
 
-    // 显示生成结果
     var resultDiv = document.getElementById('genResult');
     var listDiv = document.getElementById('genResultList');
     var html = '';
@@ -377,7 +494,6 @@ function generateTokens() {
     listDiv.innerHTML = html;
     resultDiv.style.display = 'block';
 
-    // 刷新列表
     loadStats();
     loadTokens();
   });
@@ -391,6 +507,30 @@ function revokeToken(token) {
     loadStats();
     loadTokens();
   });
+}
+
+function unbindIP(token) {
+  if (!confirm('确认解绑卡密 ' + token + ' 的所有IP？用户可重新绑定。')) return;
+  apiCall('unbind_ip', 'POST', { token: token }).then(function(data) {
+    if (data.error) { showToast(data.error, 'error'); return; }
+    showToast('IP已解绑', 'success');
+    loadStats();
+    loadTokens();
+  });
+}
+
+function unbindAllIP() {
+  if (!confirm('确认解绑所有卡密的IP？此操作影响所有用户。')) return;
+  apiCall('unbind_ip_all', 'POST', {}).then(function(data) {
+    if (data.error) { showToast(data.error, 'error'); return; }
+    showToast(data.message || '已解绑', 'success');
+    loadStats();
+    loadTokens();
+  });
+}
+
+function exportCSV() {
+  window.open(API_BASE + '/api/admin?action=export&token=' + encodeURIComponent(ADMIN_TOKEN), '_blank');
 }
 
 function showLogs(token) {
@@ -411,6 +551,7 @@ function showLogs(token) {
         '<div class="log-q">问: ' + (log.q || '(空)') + '</div>' +
         '<div class="log-a">答: ' + (log.a || '(空)') + '</div>' +
         '<div class="log-t">' + time + '</div>' +
+        (log.ip ? '<div class="log-ip">IP: ' + log.ip + '</div>' : '') +
         '</div>';
     });
     document.getElementById('logsContent').innerHTML = html;
@@ -425,7 +566,6 @@ function copyText(text) {
   navigator.clipboard.writeText(text).then(function() {
     showToast('已复制: ' + text, 'success');
   }).catch(function() {
-    // 降级
     var ta = document.createElement('textarea');
     ta.value = text;
     document.body.appendChild(ta);

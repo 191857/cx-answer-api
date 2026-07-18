@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "public": true,
+  "builds": [
+    { "src": "api/answer.js", "use": "@vercel/node" },
+    { "src": "api/admin.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/admin", "dest": "/public/admin.html" },
+    { "src": "/admin.html", "dest": "/public/admin.html" }
+  ],
+  "env": {
+    "UPSTASH_REDIS_REST_URL": "@upstash-redis-rest-url",
+    "UPSTASH_REDIS_REST_TOKEN": "@upstash-redis-rest-token",
+    "DEEPSEEK_API_KEY": "@deepseek-api-key",
+    "ADMIN_PASSWORD": "@admin-password"
+  }
+}

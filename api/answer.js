@@ -8,12 +8,28 @@ const redis = new Redis({
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
 
+// IP 限制配置
+const MAX_BOUND_IPS = 3; // 每张卡密最多绑定的 IP 数量（容错：校园网切换 WiFi、手机热点等）
+
 // CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
+
+/**
+ * 获取客户端真实 IP
+ * Vercel 环境下 x-forwarded-for 格式为 "客户端IP, 代理IP1, 代理IP2"
+ */
+function getClientIP(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) {
+    const ips = xff.split(',').map(s => s.trim()).filter(Boolean);
+    if (ips.length > 0) return ips[0]; // 第一个是客户端真实 IP
+  }
+  return req.headers['x-real-ip'] || req.headers['x-client-ip'] || 'unknown';
+}
 
 export default async function handler(req, res) {
   // CORS preflight
@@ -44,10 +60,45 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: '额度已用完，请购买新卡密' });
     }
 
-    // 2. Build prompt
+    // 2. IP 限制检查
+    const clientIP = getClientIP(req);
+    const boundIPs = keyData.boundIPs || [];
+
+    if (clientIP !== 'unknown') {
+      if (boundIPs.length === 0) {
+        // 首次使用，绑定 IP
+        boundIPs.push(clientIP);
+        await redis.set(`cx:token:${token}`, {
+          ...keyData,
+          boundIPs,
+          firstIP: clientIP,
+          firstIPTime: Date.now(),
+        });
+      } else if (!boundIPs.includes(clientIP)) {
+        // IP 不在绑定列表中
+        if (boundIPs.length < MAX_BOUND_IPS) {
+          // 未达上限，自动添加（容错）
+          boundIPs.push(clientIP);
+          await redis.set(`cx:token:${token}`, {
+            ...keyData,
+            boundIPs,
+          });
+        } else {
+          // 已达上限，拒绝
+          return res.status(403).json({
+            error: `此卡密已绑定 ${MAX_BOUND_IPS} 个设备IP，为防止共享已被锁定。如需更换设备请联系卖家解绑。`,
+            code: 'IP_LIMIT_EXCEEDED',
+            boundIPs: boundIPs.length,
+            maxIPs: MAX_BOUND_IPS,
+          });
+        }
+      }
+    }
+
+    // 3. Build prompt
     const prompt = buildPrompt(question, options, qtype);
 
-    // 3. Call DeepSeek
+    // 4. Call DeepSeek
     const aiResponse = await fetch(DEEPSEEK_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -74,20 +125,23 @@ export default async function handler(req, res) {
     const aiData = await aiResponse.json();
     const answer = aiData.choices?.[0]?.message?.content?.trim() || '';
 
-    // 4. Deduct balance
+    // 5. Deduct balance
     const newBalance = keyData.balance - 1;
     await redis.set(`cx:token:${token}`, {
       ...keyData,
+      boundIPs,
       balance: newBalance,
       used: (keyData.used || 0) + 1,
       lastUsed: Date.now(),
+      lastIP: clientIP,
     });
 
-    // 5. Log (keep last 100 logs)
+    // 6. Log (keep last 100 logs)
     await redis.lpush(`cx:logs:${token}`, {
       q: (question || '').substring(0, 100),
       a: answer.substring(0, 100),
       t: Date.now(),
+      ip: clientIP,
     });
     await redis.ltrim(`cx:logs:${token}`, 0, 99);
 
